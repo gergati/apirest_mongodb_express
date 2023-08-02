@@ -2,46 +2,87 @@
 
 const express = require('express');
 const ruta = express.Router();
-
+const Joi = require('@hapi/joi')
 const Usuario = require('../models/usuario_model');
 
-ruta.get('/', (req,res) => {
-    res.json('Listo el GET de usuarios');
+const schema = Joi.object({
+    nombre: Joi.string()
+        .min(3)
+        .max(30)
+        .required(),
+
+    password: Joi.string()
+        .pattern(/^[a-zA-Z0-9]{3,30}$/),
+
+    email: Joi.string()
+        .email({ minDomainSegments: 2, tlds: { allow: ['com', 'net'] } })
+})
+
+
+
+ruta.get('/', (req, res) => {
+    let resultado = listarUsuariosActivos()
+    resultado.then(usuarios => {
+        res.json(usuarios)
+    }).catch(err => {
+        res.status(400).json({
+            error: err
+        })
+    })
 })
 
 ruta.post('/', (req, res) => {
     let body = req.body;
-    let resultado = crearUsuario(body);
+    const { error, value } = schema.validate({ nombre: body.nombre, email: body.email })
+    if (!error) {
+        let resultado = crearUsuario(body);
 
-    resultado.then( (user) => {
-        res.json({
-            valor: user
+        resultado.then((user) => {
+            res.json({
+                nombre: user.nombre,
+                email: user.email
+            })
+        }).catch(err => {
+            res.status(400).json({
+                error: err
+            })
         })
-    }).catch(err => {
+    } else {
         res.status(400).json({
-            error: err
+            error: error
         })
-    })
+    }
+
 })
 
 ruta.put('/:email', (req, res) => {
-    let resultado = actualizarUsuario(req.params.email, req.body)
-    resultado.then(valor => {
-        res.json({
-            valor: valor
+    const { error, value } = schema.validate({ nombre: req.body.nombre })
+    if (!error) {
+        let resultado = actualizarUsuario(req.params.email, req.body)
+        resultado.then(valor => {
+            res.json({
+                nombre: valor.nombre,
+                email:valor.email
+            })
+        }).catch(err => {
+            res.status(400).json({
+                err
+            })
         })
-    }).catch(err => {
+    } else {
         res.status(400).json({
-            error: err
+            error
         })
-    })
+    }
+
 })
 
-ruta.delete('/:email',(req,res) => {
+ruta.delete('/:email', (req, res) => {
     let resultado = desactivarUsuario(req.params.email);
     resultado.then(valor => {
         res.json({
-            usuario: valor
+            nombre: valor.nombre,
+            email: valor.email
         })
     }).catch(err => {
         res.status(400).json({
@@ -50,7 +91,7 @@ ruta.delete('/:email',(req,res) => {
     })
 })
 
-async function crearUsuario(body){
+async function crearUsuario(body) {
     let usuario = new Usuario({
         email: body.email,
         nombre: body.nombre,
@@ -59,8 +100,14 @@ async function crearUsuario(body){
     return await usuario.save();
 }
 
-async function actualizarUsuario(email, body){
-    let usuario = await Usuario.findOneAndUpdate({email: email}, {
+async function listarUsuariosActivos() {
+    let usuarios = await Usuario.find({ "estado": true })
+        .select({nombre: 1, email:1})
+    return usuarios
+}
+
+async function actualizarUsuario(email, body) {
+    let usuario = await Usuario.findOneAndUpdate({ email: email }, {
         $set: {
             nombre: body.nombre,
             password: body.password,
@@ -69,8 +116,8 @@ async function actualizarUsuario(email, body){
     return usuario
 }
 
-async function desactivarUsuario(email){
-    let usuario = await Usuario.findOneAndUpdate({email:email}, {
+async function desactivarUsuario(email) {
+    let usuario = await Usuario.findOneAndUpdate({ email: email }, {
         $set: {
             estado: false
         }
