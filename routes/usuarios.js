@@ -1,8 +1,10 @@
-// @ts-nocheck
-
 const express = require('express');
 const ruta = express.Router();
-const Joi = require('@hapi/joi')
+const jwt = require('jsonwebtoken');
+const config = require('config');
+const Joi = require('@hapi/joi');
+const bcrypt = require('bcrypt');
+const verificarToken = require('../middlewares/auth')
 const Usuario = require('../models/usuario_model');
 
 const schema = Joi.object({
@@ -19,8 +21,7 @@ const schema = Joi.object({
 })
 
 
-
-ruta.get('/', (req, res) => {
+ruta.get('/', verificarToken, (req, res) => {
     let resultado = listarUsuariosActivos()
     resultado.then(usuarios => {
         res.json(usuarios)
@@ -32,7 +33,17 @@ ruta.get('/', (req, res) => {
 })
 
 ruta.post('/', (req, res) => {
-    let body = req.body;
+    let body  = req.body;
+    const {user, err } = Usuario.findOne(body.email)
+    if (err) {
+        return res.status(400).json({ error: "Server error" })
+    }
+    if (user) {
+        //Usuario si existe
+        return res.status(400).json({
+            msj: "El usuario ya existe"
+        })
+    }
     const { error, value } = schema.validate({ nombre: body.nombre, email: body.email })
     if (!error) {
         let resultado = crearUsuario(body);
@@ -55,14 +66,14 @@ ruta.post('/', (req, res) => {
 
 })
 
-ruta.put('/:email', (req, res) => {
+ruta.put('/:email',verificarToken , (req, res) => {
     const { error, value } = schema.validate({ nombre: req.body.nombre })
     if (!error) {
         let resultado = actualizarUsuario(req.params.email, req.body)
         resultado.then(valor => {
             res.json({
                 nombre: valor.nombre,
-                email:valor.email
+                email: valor.email
             })
         }).catch(err => {
             res.status(400).json({
@@ -77,7 +88,7 @@ ruta.put('/:email', (req, res) => {
 
 })
 
-ruta.delete('/:email', (req, res) => {
+ruta.delete('/:email',verificarToken ,(req, res) => {
     let resultado = desactivarUsuario(req.params.email);
     resultado.then(valor => {
         res.json({
@@ -95,14 +106,14 @@ async function crearUsuario(body) {
     let usuario = new Usuario({
         email: body.email,
         nombre: body.nombre,
-        password: body.password
+        password: bcrypt.hashSync(body.password, 10)
     })
     return await usuario.save();
 }
 
 async function listarUsuariosActivos() {
     let usuarios = await Usuario.find({ "estado": true })
-        .select({nombre: 1, email:1})
+        .select({ nombre: 1, email: 1 })
     return usuarios
 }
 
